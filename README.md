@@ -56,7 +56,8 @@ Two vertex-centric indexes are built **after** bulk load:
 
 ```
 docs/        PRD + design, analysis, load, sharding, and query-migration docs
-scripts/     ETL, build, validation, benchmark, and visualizer-setup scripts
+scripts/     ETL, build, validation, benchmark, visualizer-setup, and BYOC packaging scripts
+demo/        Time-travel visualizer (FastAPI + Cytoscape); packable for Arango BYOC
 data/        local dataset artifacts (gitignored — created by the pipeline)
 .env         connection + dataset config (gitignored — copy from .env.example)
 ```

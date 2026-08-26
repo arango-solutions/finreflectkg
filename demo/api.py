@@ -3,35 +3,62 @@
 Serves the custom demo visualizer (G9/§4.8): time-slider as-of subgraphs, influence-over-time
 (GAE PageRank per anchor year), and a company explorer (year-over-year diff + backward-looking
 disclosures). Generic-mention junk placeholders are excluded so the graph reflects the cleaned
-topology. Read-only; uses the stdlib REST helper (scripts/arango.py) — no extra DB deps.
+topology. Read-only. Talks to Arango via `arango_client` (local `.env` Basic auth, or
+BYOC `ARANGO_DEPLOYMENT_ENDPOINT` + JWT). Self-contained — no `scripts/` import — so
+the demo directory can be packed as a Container Manager `.tar.gz`.
 
-Run:  .venv/bin/uvicorn demo.api:app --reload --port 8080   (then open http://localhost:8080)
+Local:  .venv/bin/python -m uvicorn demo.api:app --port 8080
+BYOC:   python main.py   # 0.0.0.0:8000, see demo/main.py
 """
+from __future__ import annotations
+
 import pathlib
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
-from arango import req  # scripts/arango.py (stdlib-only REST helper driven by .env)
+_DIR = pathlib.Path(__file__).resolve().parent
+if str(_DIR) not in sys.path:
+    sys.path.insert(0, str(_DIR))
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.staticfiles import StaticFiles
+from arango_client import database, endpoint, parse_bearer, req, request_token  # noqa: E402
+from fastapi import FastAPI, HTTPException, Query, Request  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
-DB = "FinReflectKgTemporal"
 ANCHORS = [2014, 2019, 2020, 2024]   # years with a materialized GAE PageRank (gae_pr_<year>)
 YEAR_MIN, YEAR_MAX = 2014, 2024
 
 app = FastAPI(title="FinReflectKG Time-Travel Demo")
 
 
+class _BindRequestAuth(BaseHTTPMiddleware):
+    """Forward the inbound Bearer token to Arango (Container Manager proxy pattern)."""
+
+    async def dispatch(self, request: Request, call_next):
+        token = parse_bearer(request.headers.get("authorization"))
+        reset = request_token.set(token)
+        try:
+            return await call_next(request)
+        finally:
+            request_token.reset(reset)
+
+
+app.add_middleware(_BindRequestAuth)
+
+
 def aql(query, bind=None, timeout=60):
-    st, b = req("POST", "/_api/cursor", {"query": query, "bindVars": bind or {}, "batchSize": 50000}, db=DB, timeout=timeout)
+    st, b = req(
+        "POST",
+        "/_api/cursor",
+        {"query": query, "bindVars": bind or {}, "batchSize": 50000},
+        db=database(),
+        timeout=timeout,
+    )
     if st not in (200, 201):
         raise HTTPException(status_code=502, detail=f"AQL {st}: {b.get('errorMessage')}")
     result = b.get("result", [])
     cid = b.get("id")
     while b.get("hasMore") and cid:  # page the cursor — default batches cap at 1000 rows
-        st, b = req("PUT", f"/_api/cursor/{cid}", None, db=DB, timeout=timeout)
+        st, b = req("PUT", f"/_api/cursor/{cid}", None, db=database(), timeout=timeout)
         if st not in (200, 201):
             raise HTTPException(status_code=502, detail=f"AQL cursor {st}: {b.get('errorMessage')}")
         result.extend(b.get("result", []))
@@ -357,4 +384,14 @@ def backward(ticker: str, lag: int = 3, limit: int = 25):
         {"tk": ticker, "lag": lag, "lim": limit})
 
 
-app.mount("/", StaticFiles(directory=str(pathlib.Path(__file__).resolve().parent / "static"), html=True))
+@app.get("/health")
+def health():
+    """Liveness probe for Container Manager. Does not touch Arango."""
+    return {
+        "status": "ok",
+        "database": database(),
+        "endpoint_configured": bool(endpoint()),
+    }
+
+
+app.mount("/", StaticFiles(directory=str(_DIR / "static"), html=True))

@@ -20,6 +20,9 @@ data/*.json
 # Generated doc exports (HTML/PDF rendered from docs/*.md)
 docs/export/
 
+# BYOC packaging output (regenerable via ./scripts/package_byoc.sh)
+dist/
+
 # Runtime artifact from arango-cypher-py's NL entity resolver (regenerable)
 nl_corrections.db
 

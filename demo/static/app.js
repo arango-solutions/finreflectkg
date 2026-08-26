@@ -13,7 +13,21 @@ const TYPE_COLORS = {
 const LEGEND_TYPES = ['FIN_METRIC', 'FIN_INST', 'ORG', 'GPE', 'PRODUCT', 'RISK_FACTOR', 'SEGMENT', 'PERSON', 'FIN_MARKET'];
 const colorFor = (t) => TYPE_COLORS[t] || '#8a97ad';
 const $ = (s) => document.querySelector(s);
-const j = (u) => fetch(u).then((r) => r.json());
+// Container Manager serves this UI under /_service/uds/_db/<db>/<app>/ (or
+// /_global/<app>/). Absolute `/api/...` and `/style.css` would miss that prefix
+// and hit the coordinator root. Resolve against the page's directory instead.
+const serviceBase = (() => {
+  const p = location.pathname;
+  if (p.endsWith('/')) return p;
+  const leaf = p.slice(p.lastIndexOf('/') + 1);
+  if (leaf.includes('.')) return p.slice(0, p.lastIndexOf('/') + 1);
+  return p + '/';
+})();
+const j = (u) => fetch(serviceBase + u.replace(/^\//, ''), { credentials: 'same-origin' })
+  .then((r) => {
+    if (!r.ok) throw new Error(`${u} failed: ${r.status}`);
+    return r.json();
+  });
 const edgeKey = (e) => `${e.source}~${e.label}~${e.target}`;
 
 let cy, ticker = 'aapl', year = 2018, clean = true, depth = 1, axis = 'valid';
@@ -110,7 +124,7 @@ const nearestAnchor = (y) => anchors.reduce((a, b) => (Math.abs(b - y) < Math.ab
 
 async function rebuild() {
   $('#meta').textContent = 'building timeline…';
-  const d = await j(`/api/timeline?ticker=${ticker}&depth=${depth}&clean=${clean}&axis=${axis}&limit=140`);
+  const d = await j(`api/timeline?ticker=${ticker}&depth=${depth}&clean=${clean}&axis=${axis}&limit=140`);
   focalId = d.focal;
   const unionN = new Map(), unionE = new Map(), years = {};
   for (const [Y, yd] of Object.entries(d.years)) {
@@ -220,7 +234,7 @@ function renderYear() {
 async function loadInfluence() {
   const anchor = nearestAnchor(year);
   $('#infhdr').textContent = `PageRank · ${anchor}`;
-  if (!infCache[anchor]) infCache[anchor] = await j(`/api/influence?year=${anchor}&top=15`);
+  if (!infCache[anchor]) infCache[anchor] = await j(`api/influence?year=${anchor}&top=15`);
   $('#influence').innerHTML = infCache[anchor].rows
     .map((r) => `<li>${r.name} <span class="t">${r.type}</span></li>`).join('');
 }
@@ -230,7 +244,7 @@ async function loadDiff() {
   $('#diffhdr').textContent = `${year} vs ${base}`;
   if (year === base) { $('#appeared').innerHTML = '<li class="empty">pick another year</li>'; $('#disappeared').innerHTML = ''; return; }
   const key = `${ticker}|${year}`;
-  if (!diffCache[key]) diffCache[key] = await j(`/api/diff?ticker=${ticker}&from=${base}&to=${year}&limit=25`);
+  if (!diffCache[key]) diffCache[key] = await j(`api/diff?ticker=${ticker}&from=${base}&to=${year}&limit=25`);
   const d = diffCache[key];
   const fmt = (xs) => xs.length
     ? xs.map((x) => `<li title="${x.from} —${x.rel}→ ${x.to}">${x.to}</li>`).join('')
@@ -240,7 +254,7 @@ async function loadDiff() {
 }
 
 async function loadBackward() {
-  const d = await j(`/api/backward?ticker=${ticker}&lag=3&limit=20`);
+  const d = await j(`api/backward?ticker=${ticker}&lag=3&limit=20`);
   $('#backward').innerHTML = d.length
     ? d.map((x) => `<li><span class="yr">filed ${x.filed} → ${x.period}</span> <b>${x.to}</b> <span class="t">(${x.rel})</span></li>`).join('')
     : '<li class="empty">none</li>';
@@ -248,7 +262,7 @@ async function loadBackward() {
 
 async function ensurePrOrder() {   // prefetch PageRank rankings for each anchor (for the Top-N filter)
   await Promise.all(anchors.map(async (a) => {
-    if (!prOrder[a]) prOrder[a] = (await j(`/api/prranks?year=${a}&top=300`)).ids;
+    if (!prOrder[a]) prOrder[a] = (await j(`api/prranks?year=${a}&top=300`)).ids;
   }));
 }
 
@@ -268,10 +282,10 @@ function infCacheClear() { for (const k in diffCache) delete diffCache[k]; }
   // The pre-paint script in index.html already set data-theme; sync the button
   // glyph and the canvas to whatever it resolved to.
   applyTheme(currentTheme());
-  const yrs = await j('/api/years');
+  const yrs = await j('api/years');
   anchors = yrs.anchors || anchors;
   const yr = $('#year'); yr.min = yrs.min; yr.max = yrs.max;
-  const tks = await j('/api/tickers');
+  const tks = await j('api/tickers');
   $('#tickers').innerHTML = tks.map((t) => `<option value="${t}">`).join('');
   $('#legend').innerHTML = '<span class="lbl">filter:</span>' + LEGEND_TYPES
     .map((t) => `<span data-type="${t}" title="click to show / hide ${t}"><i style="background:${colorFor(t)}"></i>${t}</span>`).join('');
