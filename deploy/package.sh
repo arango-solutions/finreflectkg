@@ -54,7 +54,7 @@ if [ "$WITH_ENV" -eq 1 ]; then
   # unnecessary secrets into a distributable artifact.
   grep -E '^ARANGO_(ENDPOINT|USER|PASSWORD|DATABASE|VERIFY_SSL)=' "$REPO/.env" > "$STAGE/.env"
   # demo/prefix.py strips this before routing. It must match the mount path
-  # byoc_deploy.py computes, or every request 404s.
+  # the deploy tool computes (scripts/byoc-deploy), or every request 404s.
   echo "SERVICE_URL_PATH_PREFIX=${PREFIX}" >> "$STAGE/.env"
 fi
 
