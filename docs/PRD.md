@@ -958,12 +958,13 @@ near the cause.
 **DEPLOYED 2026-09-26.** Live at
 `https://prod.demo.pilot.arango.ai/_service/uds/_db/FinReflectKgTemporal/finreflect/`
 (service `arango-user-defined-iu37r`, package `finreflectkg-timetravel` v1.0.0-1, base image
-`py12base`). Deploy, roll back or remove it with
-[scripts/byoc_deploy.py](../scripts/byoc_deploy.py):
+`py12base`). Deploy, roll back or remove it with the shared
+[`arango-byoc-deploy`](https://github.com/ArthurKeen/arango-byoc-deploy) tool, configured in
+[`arango-byoc.toml`](../arango-byoc.toml) and run through [scripts/byoc-deploy](../scripts/byoc-deploy):
 
 ```
 ./deploy/package.sh 1.0.0 --with-env          # flat bundle, credentials baked (SECRET)
-.venv311/bin/python scripts/byoc_deploy.py update     # pre-flight, upload, swap, verify
+scripts/byoc-deploy update                    # pre-flight, upload, swap, verify
 ```
 
 Verified on the live URL, not just by the deploy script's own client: 743 companies; anchors

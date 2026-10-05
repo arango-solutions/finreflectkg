@@ -1,0 +1,52 @@
+# BYOC deployment settings for the shared arango-byoc-deploy tool
+# (https://github.com/ArthurKeen/arango-byoc-deploy). Run: scripts/byoc-deploy <command>
+
+app-name     = "finreflectkg-timetravel"
+instance     = "finreflect"
+display-name = "FinReflectKG Time Travel"
+description  = "Point-in-time exploration of a decade of S&P 500 10-K filings as a bitemporal knowledge graph — scrub any company's neighbourhood through 2014-2024, rank it by corpus-wide PageRank, and see what appeared or disappeared between years."
+base-image   = "py12base"
+# Explicit, not left to .env precedence: the repo .env defines both ARANGO_DB and
+# ARANGO_DATABASE, and this service mounts under the latter's database.
+database     = "FinReflectKgTemporal"
+
+# deploy/package.sh writes target/finreflectkg-timetravel-<version>.tar.gz; the
+# bundle is the artifact being deployed, so its name carries the release.
+tarball        = "target/finreflectkg-timetravel-*.tar.gz"
+version-source = { tarball-regex = 'finreflectkg-timetravel-(.+)\.tar\.gz' }
+
+required-members = [
+  "entrypoint", "requirements.txt", "demo/api.py", "demo/prefix.py", "scripts/arango.py",
+  "demo/static/index.html", "demo/static/app.js", "demo/static/style.css",
+  "demo/static/vendor/cytoscape.min.js",
+]
+index-html = "demo/static/index.html"
+
+# The platform injects nothing into the container: credentials and the mount
+# prefix (demo/prefix.py strips it before routing) must be baked.
+require-baked-env = true
+required-env-keys = ["ARANGO_ENDPOINT", "ARANGO_USER", "ARANGO_PASSWORD"]
+prefix-env-var    = "SERVICE_URL_PATH_PREFIX"
+
+# No version endpoint, so the live check is the data: a service pointed at an
+# empty or wrong database serves a perfectly healthy blank app.
+[[probes]]
+path            = "/api/years"
+label           = "anchor years"
+expect-json-key = "anchors"
+min-items       = 1
+timeout         = 90
+
+[[probes]]
+path      = "/api/tickers"
+label     = "companies"
+min-items = 700            # the corpus has 743
+timeout   = 120
+
+# A real graph query (touches relations/Node) — exposes a half-migrated database.
+[[probes]]
+path            = "/api/asof?ticker=aapl&year=2020&depth=1&clean=true&axis=valid"
+label           = "aapl 2020 graph"
+expect-json-key = ["nodes", "edges"]
+min-items       = 1
+timeout         = 180
